@@ -2,6 +2,9 @@
 # Saber 11 · Desempeño relativo de sedes educativas
 # App para Secretarías de Educación
 # ============================================================
+from email.mime import base
+from multiprocessing import pool
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -9,6 +12,7 @@ import joblib
 import shap
 import matplotlib.pyplot as plt
 from pathlib import Path
+from catboost import Pool 
 
 # ------------------------------------------------------------
 # CONFIGURACIÓN DE PÁGINA
@@ -283,7 +287,9 @@ def predecir_regresion(modelo, entrada):
         for c in NUMERICAS + TEMPORALES:
             X[c] = pd.to_numeric(X[c], errors="coerce").astype("float64")
 
-        pred = modelo.predict(X, cat_features=CATEGORICAS)
+        pool = Pool(X, cat_features=CATEGORICAS)
+        pred = modelo.predict(pool)
+
         return float(pred[0])
 
     else:
@@ -948,7 +954,8 @@ with tab_prioriza:
             X[c] = pd.to_numeric(X[c], errors="coerce").astype("float64")
 
         # Predicción con cat_features explícito
-        base["puntaje_esperado"] = modelo_reg.predict(X, cat_features=CATEGORICAS)
+        pool = Pool(X, cat_features=CATEGORICAS)
+        base["puntaje_esperado"] = modelo_reg.predict(pool)
         base["brecha"] = base["punt_global_promedio"] - base["puntaje_esperado"]
 
         return base
@@ -1068,7 +1075,8 @@ with tab_lote:
             for c in NUMERICAS + TEMPORALES:
                 X_reg[c] = pd.to_numeric(X_reg[c], errors="coerce").astype("float64")
 
-            merge["puntaje_esperado"] = modelo_reg.predict(X_reg, cat_features=CATEGORICAS)
+            pool = Pool(X_reg, cat_features=CATEGORICAS)
+            merge["puntaje_esperado"] = modelo_reg.predict(pool)
             merge["brecha"] = merge["punt_global_promedio"] - merge["puntaje_esperado"]
 
             # ---------- CLASIFICACIÓN (Gradient Boosting, sklearn pipeline) ----------
