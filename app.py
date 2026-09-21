@@ -235,7 +235,6 @@ except FileNotFoundError as e:
 CATEGORICAS = meta["categoricas_contexto"]
 NUMERICAS   = meta["numericas_contexto"]
 TEMPORALES  = meta["variables_temporales"]
-TEMPORALES_B = meta["variables_temporales_B"]
 FEATURES_B  = meta["features_B"]
 UMBRAL_B    = meta["umbral_B"]
 
