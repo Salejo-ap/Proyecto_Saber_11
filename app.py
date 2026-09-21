@@ -268,8 +268,28 @@ def derivar_temporales(historial: pd.DataFrame):
 
 
 def predecir_regresion(modelo, entrada):
-    X = entrada[NUMERICAS + TEMPORALES + CATEGORICAS]
-    return float(modelo.predict(X)[0])
+    nombre = type(modelo).__name__
+
+    if "CatBoost" in nombre:
+        # CatBoost necesita el mismo orden de columnas del entrenamiento
+        # y cat_features explícito.
+        X = entrada[NUMERICAS + CATEGORICAS + TEMPORALES].copy()
+
+        # Forzar categóricas a string
+        for c in CATEGORICAS:
+            X[c] = X[c].astype(str)
+
+        # Forzar numéricas/temporales a float (CatBoost no acepta object ni Int64 nullable)
+        for c in NUMERICAS + TEMPORALES:
+            X[c] = pd.to_numeric(X[c], errors="coerce").astype("float64")
+
+        pred = modelo.predict(X, cat_features=CATEGORICAS)
+        return float(pred[0])
+
+    else:
+        # sklearn pipelines: usan ColumnTransformer por nombre, orden no importa
+        X = entrada[NUMERICAS + TEMPORALES + CATEGORICAS]
+        return float(modelo.predict(X)[0])
 
 
 def predecir_clasificacion(modelo, entrada):
@@ -912,11 +932,25 @@ with tab_prioriza:
     def calcular_rankings():
         base = cargar_base_modelo().copy()
         base = base.dropna(subset=["punt_global_promedio"]).copy()
-        # Brecha: usar el mejor modelo (CatBoost) para predecir el esperado
+
         modelo_reg = modelos_reg["CatBoost"]
-        X = base[NUMERICAS + TEMPORALES + CATEGORICAS]
-        base["puntaje_esperado"] = modelo_reg.predict(X)
+
+        # ---- Preparar features para CatBoost ----
+
+        X = base[NUMERICAS + CATEGORICAS + TEMPORALES].copy()
+
+        # Categóricas: a string, NaN -> "Desconocido"
+        for c in CATEGORICAS:
+            X[c] = X[c].astype(str).replace({"nan": "Desconocido", "None": "Desconocido"})
+
+        # Numéricas y temporales: a float64
+        for c in NUMERICAS + TEMPORALES:
+            X[c] = pd.to_numeric(X[c], errors="coerce").astype("float64")
+
+        # Predicción con cat_features explícito
+        base["puntaje_esperado"] = modelo_reg.predict(X, cat_features=CATEGORICAS)
         base["brecha"] = base["punt_global_promedio"] - base["puntaje_esperado"]
+
         return base
 
     try:
@@ -1024,10 +1058,20 @@ with tab_lote:
             modelo_reg = modelos_reg["CatBoost"]
             modelo_clf = modelos_clf["Gradient Boosting"]
 
-            X_reg = merge[NUMERICAS + TEMPORALES + CATEGORICAS]
-            merge["puntaje_esperado"] = modelo_reg.predict(X_reg)
+            # ---------- REGRESIÓN con CatBoost ----------
+            X_reg = merge[NUMERICAS + CATEGORICAS + TEMPORALES].copy()
+
+            for c in CATEGORICAS:
+                X_reg[c] = X_reg[c].astype(str).replace(
+                    {"nan": "Desconocido", "None": "Desconocido"}
+                )
+            for c in NUMERICAS + TEMPORALES:
+                X_reg[c] = pd.to_numeric(X_reg[c], errors="coerce").astype("float64")
+
+            merge["puntaje_esperado"] = modelo_reg.predict(X_reg, cat_features=CATEGORICAS)
             merge["brecha"] = merge["punt_global_promedio"] - merge["puntaje_esperado"]
 
+            # ---------- CLASIFICACIÓN (Gradient Boosting, sklearn pipeline) ----------
             X_clf = merge[FEATURES_B]
             if hasattr(modelo_clf, "predict_proba"):
                 merge["proba_deterioro"] = modelo_clf.predict_proba(X_clf)[:, 1]
